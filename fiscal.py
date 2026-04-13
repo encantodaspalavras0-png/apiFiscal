@@ -149,7 +149,43 @@ def retorno_nf():
 
 
 # =====================================================
-# 🧪 ENDPOINT 4 — TESTE MANUAL
+# 🧪 ENDPOINT 4 — LISTAR PEDIDOS APROVADOS
+# =====================================================
+@fiscal_bp.route('/pedidos_pagos', methods=['GET'])
+def listar_pedidos_pagos():
+    # Busca pedidos aprovados
+    pedidos = Pedido.query.filter_by(status_pagamento='approved').all()
+    
+    lista_final = []
+    for p in pedidos:
+        dados = p.to_dict()
+       
+        dados['sugestao_nota'] = 'faturamento' if p.tipo_entrega == 'retirada' else 'faturamento_e_remessa'
+        lista_final.append(dados)
+    
+    return jsonify(lista_final)
+
+# =====================================================
+# 🧪 ENDPOINT 5 — MUDAR STATUS DO PEDIDO
+# =====================================================
+@fiscal_bp.route('/pedido/<int:pedido_id>/status', methods=['PUT', 'POST'])
+def atualizar_status_pedido(pedido_id):
+    pedido = Pedido.query.get_or_404(pedido_id)
+    data = request.json
+    
+    novo_status = data.get('status')
+    if not novo_status:
+        return jsonify({"erro": "O campo 'status' é obrigatório"}), 400
+        
+    pedido.status = novo_status
+    db.session.commit()
+    
+    return jsonify({"sucesso": True, "pedido_id": pedido.id, "novo_status": pedido.status})
+
+
+
+# =====================================================
+# 🧪 ENDPOINT TESTE — TESTE MANUAL
 # =====================================================
 @fiscal_bp.route('/emitir/<int:pedido_id>/<tipo>', methods=['POST'])
 def emitir_manual(pedido_id, tipo):
