@@ -2,12 +2,24 @@ from flask import Blueprint, jsonify, request
 from models import db, Pedido, ItemPedido, Cliente, Endereco, NotaFiscal
 from datetime import datetime
 import pytz
+import os
 
 BRASILIA = pytz.timezone("America/Sao_Paulo")
 
 fiscal_bp = Blueprint('fiscal', __name__, url_prefix='/api/fiscal')
 
+API_KEY = os.getenv("FISCAL_API_KEY")
 
+@fiscal_bp.before_request
+def proteger_rotas():
+    chave_recebida = request.headers.get("X-API-KEY")
+
+    if not API_KEY:
+        return jsonify({"erro": "API key não configurada no servidor"}), 500
+
+    if chave_recebida != API_KEY:
+        return jsonify({"erro": "Acesso não autorizado"}), 401
+		
 # =====================================================
 # 📦 UTIL: montar payload do pedido
 # =====================================================
@@ -153,7 +165,7 @@ def retorno_nf():
 # =====================================================
 @fiscal_bp.route('/pedidos_pagos', methods=['GET'])
 def listar_pedidos_pagos():
-    # Busca pedidos aprovados
+    
     pedidos = Pedido.query.filter_by(status_pagamento='approved').all()
     
     lista_final = []
