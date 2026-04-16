@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from models import db, Pedido, ItemPedido, Cliente, Endereco, NotaFiscal
+from models import db, Pedido, ItemPedido, Cliente, Endereco, NotaFiscal, Produto
 from datetime import datetime
 import pytz
 import os
@@ -165,17 +165,108 @@ def retorno_nf():
 # =====================================================
 @fiscal_bp.route('/pedidos_pagos', methods=['GET'])
 def listar_pedidos_pagos():
-    
-    pedidos = Pedido.query.filter_by(status_pagamento='approved').all()
-    
-    lista_final = []
-    for p in pedidos:
-        dados = p.to_dict()
-       
-        dados['sugestao_nota'] = 'faturamento' if p.tipo_entrega == 'retirada' else 'faturamento_e_remessa'
-        lista_final.append(dados)
-    
-    return jsonify(lista_final)
+    try:
+        pedidos = Pedido.query.filter_by(
+            status_pagamento='approved'
+        ).all()
+
+        lista_final = []
+
+        for p in pedidos:
+            cliente = Cliente.query.filter(
+                Cliente.id == p.cliente_id,
+                Cliente.ativo.is_(True)
+            ).first()
+
+            if not cliente:
+                continue
+
+            endereco = p.endereco
+
+            itens_db = ItemPedido.query.filter_by(
+                pedido_id=p.id
+            ).all()
+
+            itens = []
+            subtotal = 0
+
+            for item in itens_db:
+                produto = Produto.query.get(item.produto_id)
+
+                total_item = round(
+                    item.quantidade * item.preco_unitario, 2
+                )
+
+                subtotal += total_item
+
+                itens.append({
+                    "item_id": item.id,
+                    "produto_id": item.produto_id,
+                    "descricao": produto.nome if produto else f"Produto {item.produto_id}",
+                    "quantidade": item.quantidade,
+                    "valor_unitario": round(item.preco_unitario, 2),
+                    "valor_total": total_item,
+                    "tamanho": item.tamanho,
+                    "ncm": getattr(produto, "ncm", "61091000"),
+                    "cfop": "5102",
+                    "csosn": "102"
+                })
+
+            total_nota = round(
+                subtotal + (p.frete or 0) - (p.desconto_aplicado or 0), 2
+            )
+
+            dados = {
+                "pedido": {
+                    "id": p.id,
+                    "numero": p.id,
+                    "data_criacao": p.data_pedido.isoformat() if p.data_pedido else None,
+                    "status": p.status,
+                    "status_pagamento": p.status_pagamento
+                },
+
+                "destinatario": {
+                    "id": cliente.id,
+                    "nome": cliente.nome,
+                    "email": cliente.email,
+                    "telefone": cliente.telefone,
+                    "cpf_cnpj": cliente.cpf_cnpj
+                },
+
+                "endereco": {
+                    "rua": endereco.rua if endereco else None,
+                    "numero": endereco.numero if endereco else None,
+                    "complemento": endereco.complemento if endereco else None,
+                    "bairro": endereco.bairro if endereco else None,
+                    "cidade": endereco.cidade if endereco else None,
+                    "estado": endereco.estado if endereco else None,
+                    "cep": endereco.cep if endereco else None
+                },
+
+                "itens": itens,
+
+                "totais": {
+                    "subtotal": round(subtotal, 2),
+                    "frete": round(p.frete or 0, 2),
+                    "desconto": round(p.desconto_aplicado or 0, 2),
+                    "total_nota": total_nota
+                },
+
+                "codRastreio": p.codRastreio,
+
+                "sugestao_nota": (
+                    "faturamento"
+                    if p.tipo_entrega == "retirada"
+                    else "faturamento_e_remessa"
+                )
+            }
+
+            lista_final.append(dados)
+
+        return jsonify(lista_final), 200
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 # =====================================================
 # 🧪 ENDPOINT 5 — MUDAR STATUS DO PEDIDO
